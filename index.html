@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />
+<title>Позвонить Виталику</title>
+<style>
+  :root{ --bg:#0B0B0F; --card:#15151C; --ink:#F5F3EE; --muted:#9A968C; --red:#FF4438; --ring:rgba(255,68,56,.35); }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:radial-gradient(120% 90% at 50% 15%, #1a1a24 0%, var(--bg) 60%);
+    color:var(--ink); font-family:-apple-system,"Segoe UI",Roboto,sans-serif;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px;
+    min-height:100dvh;padding:32px;text-align:center;
+  }
+  .ava{
+    width:132px;height:132px;border-radius:50%;
+    background:linear-gradient(145deg,#FF6A5C,#E5231B);
+    display:flex;align-items:center;justify-content:center;font-size:60px;
+    box-shadow:0 20px 60px -18px var(--ring);
+  }
+  h1{font-size:30px;margin:0;font-weight:800;letter-spacing:-.5px}
+  p.sub{color:var(--muted);margin:0;font-size:16px;max-width:320px;line-height:1.5}
+  #status{font-size:15px;color:var(--muted);min-height:22px}
+  #status.live{color:var(--red);font-weight:700}
+  .btn{
+    border:none;cursor:pointer;font-family:inherit;font-weight:800;font-size:20px;
+    padding:20px 46px;border-radius:100px;color:#fff;background:var(--red);
+    box-shadow:0 14px 40px -12px var(--ring);transition:transform .12s ease, opacity .2s;
+  }
+  .btn:active{transform:scale(.96)}
+  .btn.end{background:#2A2A33;color:var(--ink)}
+  .btn:disabled{opacity:.5;cursor:default}
+  .pulse{animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 var(--ring)}50%{box-shadow:0 0 0 26px transparent}}
+  .hint{position:fixed;bottom:20px;left:0;right:0;font-size:12px;color:#5b5952}
+</style>
+</head>
+<body>
+  <div class="ava" id="ava">🤙</div>
+  <div>
+    <h1>Виталик</h1>
+    <p class="sub">Твой ИИ-друг с пультом под рукой. Нажми и говори голосом вживую.</p>
+  </div>
+  <div id="status">Готов к звонку</div>
+  <button class="btn" id="callBtn">📞 Позвонить Виталику</button>
+  <div class="hint">Разреши доступ к микрофону при первом звонке</div>
+
+<script type="module">
+  import Vapi from "./lib/web.bundle.mjs";
+
+  // Ключ Vapi и id ассистента зашифрованы. Расшифровываются ключом из личной ссылки (#k=…), ключ запоминается на телефоне.
+  const ENC = {"s":"//AQqct6G+d2Vu3Tn7TUFw==","i":"ScG1Erkh66LLk0tu","c":"sNHImeHAGeU7LPtKqW4JiVH45tal8OMSSNHe5nrdpmAGTMjjmNYgGFcPYZZsn9YKJHRejvyHfle535rP3QHm8uMRQpMGp7Blorbv4mheeg/P2zjjpxiBqsvg0UbIlKMYebJKYgX90wo="};
+  const btn = document.getElementById("callBtn");
+  const status = document.getElementById("status");
+  const ava = document.getElementById("ava");
+  const setStatus = (t, on=false) => { status.textContent = t; status.classList.toggle("live", on); };
+  const b64 = s => Uint8Array.from(atob(s), ch => ch.charCodeAt(0));
+
+  let linkKey = new URLSearchParams(location.hash.slice(1)).get("k");
+  try {
+    if (linkKey) { localStorage.setItem("vk", linkKey); history.replaceState(null, "", location.pathname); }
+    else linkKey = localStorage.getItem("vk");
+  } catch (e) {}
+
+  async function unlock(k) {
+    const base = await crypto.subtle.importKey("raw", new TextEncoder().encode(k), "PBKDF2", false, ["deriveKey"]);
+    const key = await crypto.subtle.deriveKey({ name: "PBKDF2", salt: b64(ENC.s), iterations: 200000, hash: "SHA-256" },
+      base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+    const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(ENC.i) }, key, b64(ENC.c));
+    return JSON.parse(new TextDecoder().decode(plain));
+  }
+
+  let cfg = null, vapi = null, live = false;
+  if (!linkKey) { setStatus("Нужна личная ссылка от Виталика"); btn.disabled = true; }
+  else {
+    try { cfg = await unlock(linkKey); }
+    catch (e) { setStatus("Ссылка не подходит — попроси у Виталика новую"); btn.disabled = true; try { localStorage.removeItem("vk"); } catch (_) {} }
+  }
+
+  if (cfg) {
+    vapi = new Vapi(cfg.pk);
+    btn.addEventListener("click", () => {
+      if (!live) { setStatus("Соединяю…"); btn.disabled = true; vapi.start(cfg.a); }
+      else vapi.stop();
+    });
+    vapi.on("call-start", () => {
+      live = true; btn.disabled = false;
+      btn.textContent = "🔴 Завершить"; btn.classList.add("end");
+      ava.classList.add("pulse"); setStatus("На связи с Виталиком", true);
+    });
+    vapi.on("call-end", () => {
+      live = false; btn.textContent = "📞 Позвонить Виталику"; btn.classList.remove("end");
+      ava.classList.remove("pulse"); setStatus("Звонок завершён");
+    });
+    vapi.on("speech-start", () => ava.textContent = "🗣️");
+    vapi.on("speech-end", () => ava.textContent = "🤙");
+    vapi.on("error", (e) => { setStatus("Ошибка: " + (e?.error?.message || e?.message || "см. консоль")); btn.disabled=false; live=false; btn.textContent="📞 Позвонить Виталику"; });
+  }
+</script>
+</body>
+</html>
